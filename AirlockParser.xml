@@ -1,1 +1,73 @@
-
+<!-- Airlock Digital log parser :: Written by Oliver Jackson -->
+<!--  -->
+<!-- no pattern defs being used currently
+<patternDefinitions>
+<pattern name="patAlMessage"><![CDATA[[\w*Message\|]]]></pattern>
+</patternDefinitions>
+-->
+<eventFormatRecognizer><![CDATA[<\d+>.*\sairlock\sAirlock\[\d+\]:\s(.*\|){4}]]></eventFormatRecognizer>
+<parsingInstructions>
+<!-- Get time details and everything else after "Airlock:"" into message body var -->
+<collectFieldsByRegex src="$_rawmsg">
+<regex>
+<![CDATA[<:gPatSyslogPRI><_year:gPatYear>-<_mon:gPatMon>-<_day:gPatDay>T<_time:gPatTime>.*\sairlock\sAirlock\[\d+\]:\s<_body:gPatMesgBody>]]>
+</regex>
+</collectFieldsByRegex>
+<!-- get time value -->
+<setEventAttribute attr="deviceTime">toDateTime($_mon, $_day, $_time)</setEventAttribute>
+<!-- clunky unescaping of \| prior to using | as separator -->
+<when test="matches($_body, '\\\|')">
+<setEventAttribute attr="_body">replaceStrInStr($_body, "\|", "::TEMP::")</setEventAttribute>
+</when>
+<setEventAttribute attr="_body">replaceStrInStr($_body, "|", "::SEP::")</setEventAttribute>
+<when test="matches($_body, '::TEMP::')">
+<setEventAttribute attr="_body">replaceStrInStr($_body, "::TEMP::", "|")</setEventAttribute>
+</when>
+<!-- get first separated position as event type before custom processing the remainder -->
+<collectAndSetAttrByPos sep="::SEP::" src="$_body">
+<attrPosMap attr="_eType" pos="1"/>
+</collectAndSetAttrByPos>
+<!-- set event type -->
+<when test="exist $_eType ">
+<setEventAttribute attr="eventType">combineMsgId("Airlock-", $_eType)</setEventAttribute>
+</when>
+<!-- set flag for final catchall unknown event action -->
+<setEventAttribute attr="_eventParsed">0</setEventAttribute>
+<!-- for FileActivityMessage eType -->
+<when test="matches($_eType, 'FileActivityMessage')">
+<collectAndSetAttrByPos sep="::SEP::" src="$_body">
+<attrPosMap attr="_detectionTime" pos="2"/>
+<attrPosMap attr="hostName" pos="3"/>
+<attrPosMap attr="user" pos="4"/>
+<attrPosMap attr="_objectPath-fileName" pos="5"/>
+<attrPosMap attr="hashSHA256" pos="6"/>
+<attrPosMap attr="hashMD5" pos="7"/>
+<attrPosMap attr="_hashSHA128" pos="8"/>
+<attrPosMap attr="signatureName" pos="9"/>
+<attrPosMap attr="airlockGroupParent" pos="10"/>
+<attrPosMap attr="airlockGroup" pos="11"/>
+<attrPosMap attr="actionName" pos="12"/>
+<attrPosMap attr="parentFileName" pos="13"/>
+</collectAndSetAttrByPos>
+<collectAndSetAttrByPos sep="|" src="$_objectPath-fileName">
+<attrPosMap attr="objectPath" pos="1"/>
+<attrPosMap attr="fileName" pos="2"/>
+</collectAndSetAttrByPos>
+<setEventAttribute attr="_eventParsed">1</setEventAttribute>
+</when>
+<!-- for ServerActivityMessage eType -->
+<when test="matches($_eType, 'ServerActivityMessage')">
+<collectAndSetAttrByPos sep="::SEP::" src="$_body">
+<attrPosMap attr="_detectionTime" pos="2"/>
+<attrPosMap attr="actionName" pos="3"/>
+<attrPosMap attr="user" pos="4"/>
+<attrPosMap attr="msg" pos="5"/>
+</collectAndSetAttrByPos>
+<setEventAttribute attr="_eventParsed">1</setEventAttribute>
+</when>
+<!-- catchall for unknown eType -->
+<when test="matches($_eventParsed, 0)">
+<setEventAttribute attr="eventType">'Airlock-UnknownEvent'</setEventAttribute>
+<setEventAttribute attr="msg">replaceStrInStr($_body, "::SEP::", "|")</setEventAttribute>
+</when>
+</parsingInstructions>
